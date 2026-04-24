@@ -2189,6 +2189,8 @@ class DiscordAdapter(BasePlatformAdapter):
         has_roles = bool(allowed_roles)
         if not has_users and not has_roles:
             return True
+        if os.getenv("DISCORD_ALLOW_ALL_USERS", "").lower() in ("true", "1", "yes"):
+            return True
         # Check user ID allowlist (works for both DMs and guild messages)
         if has_users and user_id in allowed_users:
             return True
@@ -4586,9 +4588,11 @@ if DISCORD_AVAILABLE:
 
         def _check_auth(self, interaction: discord.Interaction) -> bool:
             """Verify the user clicking is authorized."""
-            return _component_check_auth(
-                interaction, self.allowed_user_ids, self.allowed_role_ids,
-            )
+            if not self.allowed_user_ids:
+                return True  # No allowlist = anyone can approve
+            if os.getenv("DISCORD_ALLOW_ALL_USERS", "").lower() in ("true", "1", "yes"):
+                return True
+            return str(interaction.user.id) in self.allowed_user_ids
 
         async def _resolve(
             self, interaction: discord.Interaction, choice: str,
