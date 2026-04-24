@@ -557,7 +557,19 @@ class TelegramAdapter(BasePlatformAdapter):
             # allow everyone (fixes #24457).
             return os.getenv("GATEWAY_ALLOW_ALL_USERS", "").lower() in {"true", "1", "yes"}
         allowed_ids = {uid.strip() for uid in allowed_csv.split(",") if uid.strip()}
-        return "*" in allowed_ids or normalized_user_id in allowed_ids
+        if "*" in allowed_ids or user_id in allowed_ids:
+            return True
+        # Fall back to the pairing store so users approved via DM pairing
+        # can also approve commands via inline buttons.
+        try:
+            from gateway.pairing import PairingStore
+            from hermes_constants import get_hermes_home
+            store = PairingStore(get_hermes_home() / "pairing")
+            if store.is_approved("telegram", user_id):
+                return True
+        except Exception:
+            pass
+        return False
 
     @classmethod
     def _metadata_thread_id(cls, metadata: Optional[Dict[str, Any]]) -> Optional[str]:
