@@ -419,6 +419,13 @@ def execute_tool_calls_concurrent(agent, assistant_message, messages: list, effe
             except Exception as cb_err:
                 logging.debug(f"Tool complete callback error: {cb_err}")
 
+        _completion_tracker = getattr(agent, "_completion_evidence_tracker", None)
+        if not blocked and _completion_tracker is not None:
+            try:
+                _completion_tracker.record_tool_result(name, args, function_result)
+            except Exception as _ce_err:
+                logger.debug("completion evidence tracking failed for %s: %s", name, _ce_err)
+
         function_result = maybe_persist_tool_result(
             content=function_result,
             tool_name=name,
@@ -841,6 +848,13 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
                 agent.tool_complete_callback(tool_call.id, function_name, function_args, function_result)
             except Exception as cb_err:
                 logging.debug(f"Tool complete callback error: {cb_err}")
+
+        _completion_tracker = getattr(agent, "_completion_evidence_tracker", None)
+        if not _execution_blocked and _completion_tracker is not None:
+            try:
+                _completion_tracker.record_tool_result(function_name, function_args, function_result)
+            except Exception as _ce_err:
+                logger.debug("completion evidence tracking failed for %s: %s", function_name, _ce_err)
 
         function_result = maybe_persist_tool_result(
             content=function_result,

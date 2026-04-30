@@ -466,6 +466,14 @@ def run_conversation(
     # rejection and kept False for the rest of the session so we never re-send
     # images to a text-only endpoint.  Scoped per `_run()` call, not per instance.
     agent._vision_supported = True
+    try:
+        from agent.completion_evidence import CompletionEvidenceTracker
+        agent._completion_evidence_tracker = CompletionEvidenceTracker()
+        agent._completion_evidence_nudges = 0
+        agent._last_completion_evidence_decision = None
+    except Exception:
+        agent._completion_evidence_tracker = None
+        agent._last_completion_evidence_decision = None
 
     # Pre-turn connection health check: detect and clean up dead TCP
     # connections left over from provider outages or dropped streams.
@@ -4213,8 +4221,48 @@ def run_conversation(
                     length_continue_retries = 0
                 
                 final_response = agent._strip_think_blocks(final_response).strip()
-                
+
+                _completion_tracker = getattr(agent, "_completion_evidence_tracker", None)
+                if _completion_tracker is not None:
+                    try:
+                        _completion_decision = _completion_tracker.evaluate_final_response(final_response)
+                        agent._last_completion_evidence_decision = _completion_decision
+                    except Exception as _ce_err:
+                        logger.debug("completion evidence evaluation failed: %s", _ce_err)
+                        _completion_decision = None
+
+                    if _completion_decision is not None and not _completion_decision.allowed:
+                        _missing = ", ".join(_completion_decision.missing_gates)
+                        if getattr(agent, "_completion_evidence_nudges", 0) < 1:
+                            agent._completion_evidence_nudges += 1
+                            logger.info(
+                                "Blocking unvalidated completion claim; missing gates: %s",
+                                _missing,
+                            )
+                            blocked_msg = agent._build_assistant_message(assistant_message, finish_reason)
+                            blocked_msg["content"] = final_response
+                            messages.append(blocked_msg)
+                            messages.append({
+                                "role": "user",
+                                "content": (
+                                    "[System: Your last response claimed code/automation completion "
+                                    f"without observed evidence for: {_missing}. Continue by running "
+                                    "the missing validation tools if possible. If validation cannot be "
+                                    "run, do not claim done/fixed/working; report the precise pending "
+                                    "evidence instead.]"
+                                ),
+                            })
+                            continue
+                        final_response = (
+                            "Status: not complete — completion evidence missing ("
+                            f"{_missing}).\n\n"
+                            + final_response
+                        )
+                    else:
+                        agent._completion_evidence_nudges = 0
+
                 final_msg = agent._build_assistant_message(assistant_message, finish_reason)
+                final_msg["content"] = final_response
 
                 # Pop thinking-only prefill and empty-response retry
                 # scaffolding before appending the final response.  These
