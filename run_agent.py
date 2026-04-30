@@ -10867,6 +10867,13 @@ class AIAgent:
                 except Exception as cb_err:
                     logging.debug(f"Tool complete callback error: {cb_err}")
 
+            _completion_tracker = getattr(self, "_completion_evidence_tracker", None)
+            if _completion_tracker is not None:
+                try:
+                    _completion_tracker.record_tool_result(name, args, function_result)
+                except Exception as _ce_err:
+                    logger.debug("completion evidence tracking failed for %s: %s", name, _ce_err)
+
             function_result = maybe_persist_tool_result(
                 content=function_result,
                 tool_name=name,
@@ -11281,6 +11288,13 @@ class AIAgent:
                 except Exception as cb_err:
                     logging.debug(f"Tool complete callback error: {cb_err}")
 
+            _completion_tracker = getattr(self, "_completion_evidence_tracker", None)
+            if _completion_tracker is not None:
+                try:
+                    _completion_tracker.record_tool_result(function_name, function_args, function_result)
+                except Exception as _ce_err:
+                    logger.debug("completion evidence tracking failed for %s: %s", function_name, _ce_err)
+
             function_result = maybe_persist_tool_result(
                 content=function_result,
                 tool_name=function_name,
@@ -11677,6 +11691,14 @@ class AIAgent:
         # rejection and kept False for the rest of the session so we never re-send
         # images to a text-only endpoint.  Scoped per `_run()` call, not per instance.
         self._vision_supported = True
+        try:
+            from agent.completion_evidence import CompletionEvidenceTracker
+            self._completion_evidence_tracker = CompletionEvidenceTracker()
+            self._completion_evidence_nudges = 0
+            self._last_completion_evidence_decision = None
+        except Exception:
+            self._completion_evidence_tracker = None
+            self._last_completion_evidence_decision = None
 
         # Pre-turn connection health check: detect and clean up dead TCP
         # connections left over from provider outages or dropped streams.
@@ -15080,8 +15102,48 @@ class AIAgent:
                         length_continue_retries = 0
                     
                     final_response = self._strip_think_blocks(final_response).strip()
+
+                    _completion_tracker = getattr(self, "_completion_evidence_tracker", None)
+                    if _completion_tracker is not None:
+                        try:
+                            _completion_decision = _completion_tracker.evaluate_final_response(final_response)
+                            self._last_completion_evidence_decision = _completion_decision
+                        except Exception as _ce_err:
+                            logger.debug("completion evidence evaluation failed: %s", _ce_err)
+                            _completion_decision = None
+
+                        if _completion_decision is not None and not _completion_decision.allowed:
+                            _missing = ", ".join(_completion_decision.missing_gates)
+                            if getattr(self, "_completion_evidence_nudges", 0) < 1:
+                                self._completion_evidence_nudges += 1
+                                logger.info(
+                                    "Blocking unvalidated completion claim; missing gates: %s",
+                                    _missing,
+                                )
+                                blocked_msg = self._build_assistant_message(assistant_message, finish_reason)
+                                blocked_msg["content"] = final_response
+                                messages.append(blocked_msg)
+                                messages.append({
+                                    "role": "user",
+                                    "content": (
+                                        "[System: Your last response claimed code/automation completion "
+                                        f"without observed evidence for: {_missing}. Continue by running "
+                                        "the missing validation tools if possible. If validation cannot be "
+                                        "run, do not claim done/fixed/working; report the precise pending "
+                                        "evidence instead.]"
+                                    ),
+                                })
+                                continue
+                            final_response = (
+                                "Status: not complete — completion evidence missing ("
+                                f"{_missing}).\n\n"
+                                + final_response
+                            )
+                        else:
+                            self._completion_evidence_nudges = 0
                     
                     final_msg = self._build_assistant_message(assistant_message, finish_reason)
+                    final_msg["content"] = final_response
 
                     # Pop thinking-only prefill and empty-response retry
                     # scaffolding before appending the final response.  These

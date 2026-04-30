@@ -3304,16 +3304,21 @@ class TestRunConversation:
             patch.object(agent, "_cleanup_task_resources"),
         ):
             # First call: truncated → retry. Second: valid → execute tool.
-            # Third: final text response.
+            # Third: an unvalidated completion claim is blocked by the
+            # completion-evidence gate. Fourth: model downgrades the claim.
             final_resp = _mock_response(content="Done!", finish_reason="stop")
+            downgraded_resp = _mock_response(
+                content="Report written; validation is still pending.",
+                finish_reason="stop",
+            )
             agent.client.chat.completions.create.side_effect = [
-                truncated_resp, good_resp, final_resp,
+                truncated_resp, good_resp, final_resp, downgraded_resp,
             ]
             result = agent.run_conversation("write the report")
 
         # Tool was executed on the retry (good_resp)
         mock_hfc.assert_called_once()
-        assert result["final_response"] == "Done!"
+        assert result["final_response"] == "Report written; validation is still pending."
 
     def test_truncated_tool_args_detected_when_finish_reason_not_length(self, agent):
         """When a router rewrites finish_reason from 'length' to 'tool_calls',
