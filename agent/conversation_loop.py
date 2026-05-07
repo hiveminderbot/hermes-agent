@@ -467,8 +467,15 @@ def run_conversation(
     # images to a text-only endpoint.  Scoped per `_run()` call, not per instance.
     agent._vision_supported = True
     try:
-        from agent.completion_evidence import CompletionEvidenceTracker
-        agent._completion_evidence_tracker = CompletionEvidenceTracker()
+        import os as _completion_evidence_os
+        _completion_evidence_enabled = _completion_evidence_os.getenv(
+            "HERMES_COMPLETION_EVIDENCE_GATE", "1"
+        ).strip().lower() not in {"0", "false", "no", "off"}
+        if _completion_evidence_enabled:
+            from agent.completion_evidence import CompletionEvidenceTracker
+            agent._completion_evidence_tracker = CompletionEvidenceTracker()
+        else:
+            agent._completion_evidence_tracker = None
         agent._completion_evidence_nudges = 0
         agent._last_completion_evidence_decision = None
     except Exception:
