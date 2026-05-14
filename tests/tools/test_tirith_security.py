@@ -45,6 +45,19 @@ def _json_stdout(findings=None, summary=""):
     return json.dumps({"findings": findings or [], "summary": summary})
 
 
+class TestDefaultSecurityPosture:
+    @patch("hermes_cli.config.load_config", side_effect=RuntimeError("missing config"))
+    def test_wrapper_default_fails_closed_when_config_unavailable(self, _mock_load_config):
+        cfg = _tirith_mod._load_security_config()
+        assert cfg["tirith_enabled"] is True
+        assert cfg["tirith_fail_open"] is False
+
+    def test_generated_default_config_fails_closed(self):
+        from hermes_cli.config import DEFAULT_CONFIG
+
+        assert DEFAULT_CONFIG["security"]["tirith_fail_open"] is False
+
+
 # ---------------------------------------------------------------------------
 # Exit code → action mapping
 # ---------------------------------------------------------------------------
