@@ -1931,6 +1931,14 @@ class TestBuildJobPromptSilentHint:
         assert "do NOT use send_message" in result
         assert "automatically delivered" in result
 
+    def test_nix_guidance_prefers_flake_cli_over_legacy_nix_shell(self):
+        """Cron hint should not steer unattended agents toward legacy nix-shell."""
+        job = {"prompt": "Run the Nix-based maintenance task"}
+        result = _build_job_prompt(job)
+        assert "nix develop" in result
+        assert "nix shell" in result
+        assert "nix-shell" not in result
+
     def test_delivery_guidance_precedes_user_prompt(self):
         """System guidance appears before the user's prompt text."""
         job = {"prompt": "My custom prompt"}

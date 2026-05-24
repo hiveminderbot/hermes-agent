@@ -1100,7 +1100,10 @@ def _build_job_prompt(job: dict, prerun_script: Optional[tuple] = None) -> str:
         "SILENT: If there is genuinely nothing new to report, respond "
         "with exactly \"[SILENT]\" (nothing else) to suppress delivery. "
         "Never combine [SILENT] with content — either report your "
-        "findings normally, or say [SILENT] and nothing more.]\n\n"
+        "findings normally, or say [SILENT] and nothing more. "
+        "NIX: When operating in Nix-enabled workspaces, avoid legacy Nix shell entrypoints; "
+        "prefer flake/new CLI commands such as nix develop --command ..., "
+        "nix shell ... --command ..., nix flake check, or nix run .#<app>.]\n\n"
     )
     prompt = cron_hint + prompt
     if skills is None:
