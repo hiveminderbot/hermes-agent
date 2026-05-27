@@ -54,6 +54,40 @@ class TestCodexBuildKwargs:
         assert "input" in kw
         assert kw["store"] is False
 
+    def test_none_tools_omitted_from_kwargs(self, transport):
+        """Passing tools=None must not put 'tools' key in kwargs.
+
+        The OpenAI SDK's _make_tools() iterates the value; passing None
+        causes TypeError: 'NoneType' object is not iterable.
+        """
+        messages = [
+            {"role": "system", "content": "You are helpful."},
+            {"role": "user", "content": "Hello"},
+        ]
+        kw = transport.build_kwargs(
+            model="gpt-5.4",
+            messages=messages,
+            tools=None,
+        )
+        assert "tools" not in kw
+        assert "tool_choice" not in kw
+        assert "parallel_tool_calls" not in kw
+
+    def test_empty_tools_omitted_from_kwargs(self, transport):
+        """Empty tools list should also omit 'tools' key."""
+        messages = [
+            {"role": "system", "content": "You are helpful."},
+            {"role": "user", "content": "Hello"},
+        ]
+        kw = transport.build_kwargs(
+            model="gpt-5.4",
+            messages=messages,
+            tools=[],
+        )
+        assert "tools" not in kw
+        assert "tool_choice" not in kw
+        assert "parallel_tool_calls" not in kw
+
     def test_system_extracted_from_messages(self, transport):
         messages = [
             {"role": "system", "content": "Custom system prompt"},
